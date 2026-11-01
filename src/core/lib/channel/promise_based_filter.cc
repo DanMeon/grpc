@@ -1195,6 +1195,9 @@ class ClientCallData::PollContext {
         // Now that the receive message pump is idle (finished processing all
         // in-flight messages), we can finally release the trailing metadata.
         self_->recv_trailing_state_ = RecvTrailingState::kComplete;
+        // RecvTrailingMetadataReady deferred this for a clean end of stream.
+        self_->receive_message()->Done(*self_->recv_trailing_metadata_,
+                                       flusher_);
         repoll_ = true;
       }
     }
@@ -2008,7 +2011,17 @@ void ClientCallData::RecvTrailingMetadataReady(grpc_error_handle error) {
   } else {
     recv_trailing_state_ = RecvTrailingState::kComplete;
   }
-  if (receive_message() != nullptr) {
+  // The transport can run this callback before recv_message_ready of the same
+  // batch (the two are scheduled from different threads). A clean end of
+  // stream queued behind the receive message pump must not touch the pump
+  // yet: Done() would turn a message still owned by the transport
+  // (kForwardedBatch) into a cancelled one, which is later forwarded without
+  // running the message interceptors (e.g. still compressed). PollContext::Run
+  // calls Done() when it releases the queued trailing metadata.
+  if (receive_message() != nullptr &&
+      (recv_trailing_state_ !=
+           RecvTrailingState::kCompletedQueuedBehindReceiveMessage ||
+       !error.ok())) {
     receive_message()->Done(*recv_trailing_metadata_, &flusher,
                             /*discard_buffered_message=*/!error.ok());
   }
