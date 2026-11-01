@@ -564,7 +564,10 @@ CYTHON_EXTENSION_MODULES, need_cython = cython_extensions_and_necessity()
 INSTALL_REQUIRES = ("typing-extensions~=4.12",)
 
 EXTRAS_REQUIRES = {
-    "protobuf": "grpcio-tools>={version}".format(version=grpc_version.VERSION),
+    # A local label (+carenode.N) is not allowed in an ordered specifier (PEP 440).
+    "protobuf": "grpcio-tools>={version}".format(
+        version=grpc_version.VERSION.split("+")[0]
+    ),
 }
 
 SETUP_REQUIRES = (
