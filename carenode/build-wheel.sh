@@ -15,7 +15,8 @@
 # 스크립트(tools/run_tests/artifacts/build_artifact_python.sh)처럼 `auditwheel repair --strip` 으로
 # manylinux 태그를 붙인다 — glibc 2.28 이상(Amazon Linux 2023, Debian trixie 등)에서 돈다.
 # x86_64 는 실제 x86_64 docker 에서 돌린다. Apple Silicon 의 Rosetta 로 돌리면 컴파일 도중 멈춘 적이 있다.
-# macos 는 uv 가 고른 CPython 3.13 으로 빌드한다.
+# macos 는 uv 가 고른 CPython 3.13 으로 빌드한다. 셸의 CFLAGS·CXXFLAGS·CPPFLAGS·LDFLAGS 는 비우고 빌드한다 —
+# 거기 든 -I 경로(예: Homebrew openssl)가 번들 소스의 헤더보다 앞에 붙어 다른 헤더로 컴파일될 수 있다.
 # 병렬 수는 JOBS(기본: CPU 수).
 # 컨테이너가 프록시로만 밖에 나갈 수 있는 호스트에서는 CONTAINER_PROXY 에 컨테이너 안에서 본 프록시 주소를 준다.
 # 빌드 의존성(setuptools 등)을 컨테이너 안의 pip 가 PyPI 에서 받기 때문이다. 호스트의 HTTP(S)_PROXY 는
@@ -96,7 +97,8 @@ if [ -n "$image" ]; then
       cp /tmp/repaired/grpcio-*.whl /out/
       chown "$HOST_IDS" /out/grpcio-*.whl'
 else
-  GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS="$jobs" uv build --wheel --python 3.13 --out-dir "$out" "$src"
+  env -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS="$jobs" \
+    uv build --wheel --python 3.13 --out-dir "$out" "$src"
 fi
 
 # 3. 결과
