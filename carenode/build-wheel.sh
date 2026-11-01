@@ -17,6 +17,10 @@
 # x86_64 는 실제 x86_64 docker 에서 돌린다. Apple Silicon 의 Rosetta 로 돌리면 컴파일 도중 멈춘 적이 있다.
 # macos 는 uv 가 고른 CPython 3.13 으로 빌드한다.
 # 병렬 수는 JOBS(기본: CPU 수).
+# 컨테이너가 프록시로만 밖에 나갈 수 있는 호스트에서는 CONTAINER_PROXY 에 컨테이너 안에서 본 프록시 주소를 준다.
+# 빌드 의존성(setuptools 등)을 컨테이너 안의 pip 가 PyPI 에서 받기 때문이다. 호스트의 HTTP(S)_PROXY 는
+# 넘기지 않는다 — 127.0.0.1 같은 주소는 컨테이너 안에서 컨테이너 자신을 가리킨다.
+# 주소에 host.docker.internal 이 있으면 리눅스에서도 그 이름이 호스트(브리지 게이트웨이)로 풀리게 한다.
 set -eu
 
 BASE_TAG=v1.83.0
@@ -73,8 +77,17 @@ echo "base=$BASE_TAG head=$(git -C "$root" rev-parse HEAD) patch_sha256=$(sha256
 
 # 2. 빌드
 if [ -n "$image" ]; then
-  docker run --rm -e JOBS="$jobs" -e HOST_IDS="$(id -u):$(id -g)" \
-    -v "$src:/src:ro" -v "$out:/out" "$image" sh -euc '
+  set -- -e JOBS="$jobs" -e HOST_IDS="$(id -u):$(id -g)"
+  if [ -n "${CONTAINER_PROXY:-}" ]; then
+    # ^ pip·curl 이 읽는 철자가 서로 달라 대소문자 두 벌을 다 준다.
+    for name in HTTP_PROXY http_proxy HTTPS_PROXY https_proxy; do
+      set -- "$@" -e "$name=$CONTAINER_PROXY"
+    done
+    case "$CONTAINER_PROXY" in
+      *host.docker.internal*) set -- "$@" --add-host host.docker.internal:host-gateway ;;
+    esac
+  fi
+  docker run --rm "$@" -v "$src:/src:ro" -v "$out:/out" "$image" sh -euc '
       cp -a /src /tmp/grpcio
       cd /tmp/grpcio
       GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS="$JOBS" /opt/python/cp313-cp313/bin/python -m pip wheel -q --no-deps -w /tmp/raw .
